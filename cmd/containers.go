@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dantech2000/kubelog/utils"
+	lib "github.com/dantech2000/kubelog/lib"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -27,19 +27,19 @@ Example usage:
 		namespace, _ := cmd.Flags().GetString("namespace")
 		outputFormat, _ := cmd.Flags().GetString("output")
 
-		clientset, err := utils.GetKubernetesClient()
+		clientset, err := lib.GetKubernetesClient()
 		if err != nil {
 			color.Red("Error creating Kubernetes client: %v", err)
 			os.Exit(1)
 		}
 
-		containers, err := utils.ListContainers(clientset, namespace, podName)
+		containers, err := lib.ListContainers(clientset, namespace, podName)
 		if err != nil {
 			color.Red("Error listing containers: %v", err)
 			os.Exit(1)
 		}
 
-		formatter := utils.NewOutputFormatter(podName, namespace, containers)
+		formatter := lib.NewOutputFormatter(podName, namespace, containers)
 		output, err := formatter.FormatOutput(outputFormat)
 		if err != nil {
 			color.Red("Error formatting output: %v", err)

@@ -1,6 +1,6 @@
 module github.com/dantech2000/kubelog
 
-go 1.22.5
+go 1.22
 
 require (
 	github.com/fatih/color v1.17.0

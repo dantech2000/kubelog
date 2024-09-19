@@ -1,10 +1,11 @@
-package utils
+package lib
 
 import (
 	"context"
 	"fmt"
+	"io"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -41,7 +42,7 @@ func (lf *LogFetcher) FetchLogs() error {
 	}
 
 	// Fetch logs
-	logOptions := &v1.PodLogOptions{
+	logOptions := &corev1.PodLogOptions{
 		Follow:    lf.Follow,
 		Container: lf.Container,
 	}
@@ -113,4 +114,11 @@ func ListContainers(clientset *kubernetes.Clientset, namespace, podName string) 
 	}
 
 	return containers, nil
+}
+
+func (lf *LogFetcher) GetLogReader() (io.ReadCloser, error) {
+	return lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, &corev1.PodLogOptions{
+		Container: lf.Container,
+		Follow:    lf.Follow,
+	}).Stream(context.Background())
 }
