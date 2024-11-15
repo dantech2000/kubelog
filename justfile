@@ -1,3 +1,5 @@
+set dotenv-load
+
 # List available commands
 default:
     @just --list
@@ -51,14 +53,52 @@ deps:
 run *ARGS:
     go run main.go {{ ARGS }}
 
-# Create a new release tag
-release VERSION:
-    git tag -a v{{ VERSION }} -m "Release v{{ VERSION }}"
-    git push origin v{{ VERSION }}
+# Create a new release with the specified version
+release version:
+    #!/usr/bin/env bash
+    echo "Attempting to create release with version: {{version}}"
+    if [[ ! "{{version}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Version must be in the format v0.0.0"
+        exit 1
+    fi
+    
+    if git rev-parse {{version}} >/dev/null 2>&1; then
+        echo "Error: Tag {{version}} already exists."
+        echo "To force update the tag, use: just release-force {{version}}"
+        exit 1
+    fi
+    
+    echo "Version format valid, creating tag..."
+    git tag -a {{version}} -m "Release {{version}}"
+    git push origin {{version}}
+
+# Force update an existing release version
+release-force version:
+    #!/usr/bin/env bash
+    echo "Force updating release version: {{version}}"
+    if [[ ! "{{version}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "Error: Version must be in the format v0.0.0"
+        exit 1
+    fi
+    
+    git tag -fa {{version}} -m "Release {{version}}"
+    git push origin {{version}} --force
 
 # Generate and update changelog
 changelog:
     git-chglog -o CHANGELOG.md
+
+# Run goreleaser to create a new release
+release-goreleaser:
+    #!/usr/bin/env bash
+    if [ ! -f .env ]; then
+        echo "Error: .env file not found"
+        exit 1
+    fi
+    set -a
+    source .env
+    set +a
+    goreleaser release
 
 # Build and run in one step
 build-and-run *ARGS: build
