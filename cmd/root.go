@@ -35,5 +35,4 @@ func init() {
 	// Here you can define flags and configuration settings that are global to all commands.
 	// For example, setting a default namespace.
 	rootCmd.PersistentFlags().StringP("namespace", "n", "default", "Kubernetes namespace")
-	rootCmd.AddCommand(versionCmd)
 }

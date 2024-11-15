@@ -1,1 +1,5 @@
-/bin/kubelog
+bin/
+.DS_Store
+
+# pre-commit
+.pre-commit-config.yaml
