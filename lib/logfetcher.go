@@ -4,7 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/fatih/color"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -12,62 +16,104 @@ import (
 )
 
 type LogFetcher struct {
-	Clientset *kubernetes.Clientset
-	Namespace string
-	PodName   string
-	Container string
-	Follow    bool
+	Clientset     *kubernetes.Clientset
+	Namespace     string
+	PodName       string
+	ContainerName string
+	Follow        bool
+	Previous      bool
+	Writer        io.Writer
 }
 
-func NewLogFetcher(clientset *kubernetes.Clientset, namespace, podName, container string, follow bool) *LogFetcher {
+func NewLogFetcher(clientset *kubernetes.Clientset, namespace, podName string, follow bool, previous bool, writer io.Writer) *LogFetcher {
 	return &LogFetcher{
 		Clientset: clientset,
 		Namespace: namespace,
 		PodName:   podName,
-		Container: container,
 		Follow:    follow,
+		Previous:  previous,
+		Writer:    writer,
 	}
 }
 
-func (lf *LogFetcher) FetchLogs() error {
-	fmt.Printf("Fetching logs for pod %s in namespace %s, container %s\n", lf.PodName, lf.Namespace, lf.Container)
-
-	// If container name is not provided, check if pod has only one container
-	if lf.Container == "" {
-		container, err := lf.getSingleContainerName()
+func (lf *LogFetcher) GetLogs() error {
+	// Get container name first if not specified
+	if lf.ContainerName == "" {
+		containerName, err := lf.getSingleContainerName()
 		if err != nil {
 			return err
 		}
-		lf.Container = container
+		lf.ContainerName = containerName
 	}
 
-	// Fetch logs
-	logOptions := &corev1.PodLogOptions{
+	// Now proceed with log fetching
+	podLogOpts := corev1.PodLogOptions{
+		Container: lf.ContainerName,
 		Follow:    lf.Follow,
-		Container: lf.Container,
+		Previous:  lf.Previous,
 	}
 
-	req := lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, logOptions)
+	req := lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, &podLogOpts)
 	podLogs, err := req.Stream(context.Background())
 	if err != nil {
 		return fmt.Errorf("error opening log stream: %v", err)
 	}
 	defer podLogs.Close()
 
-	buffer := make([]byte, 2000)
-	for {
-		numBytes, err := podLogs.Read(buffer)
-		if numBytes > 0 {
-			logLine := string(buffer[:numBytes])
-			coloredLog := ParseLog(logLine)
-			fmt.Print(coloredLog)
-		}
-		if err != nil {
-			break
-		}
+	_, err = io.Copy(lf.Writer, podLogs)
+	if err != nil {
+		return fmt.Errorf("error copying log stream: %v", err)
 	}
 	fmt.Printf("Log stream opened successfully\n")
 	return nil
+}
+
+type containerInfo struct {
+	Name       string
+	Ready      bool
+	Status     string
+	Image      string
+	DisplayStr string
+}
+
+func getContainerStatus(pod *corev1.Pod, containerName string) (bool, string) {
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == containerName {
+			return status.Ready, getContainerState(status.State)
+		}
+	}
+	return false, "Unknown"
+}
+
+func getContainerState(state corev1.ContainerState) string {
+	if state.Running != nil {
+		return "Running"
+	}
+	if state.Waiting != nil {
+		return fmt.Sprintf("Waiting (%s)", state.Waiting.Reason)
+	}
+	if state.Terminated != nil {
+		return fmt.Sprintf("Terminated (%s)", state.Terminated.Reason)
+	}
+	return "Unknown"
+}
+
+func formatContainerInfo(info containerInfo) string {
+	statusColor := color.New(color.FgRed)
+	if info.Ready {
+		statusColor = color.New(color.FgGreen)
+	}
+
+	readySymbol := "✗"
+	if info.Ready {
+		readySymbol = "✓"
+	}
+
+	return fmt.Sprintf("%s %s [%s] (%s)",
+		statusColor.Sprint(readySymbol),
+		info.Name,
+		info.Status,
+		info.Image)
 }
 
 func (lf *LogFetcher) getSingleContainerName() (string, error) {
@@ -81,26 +127,72 @@ func (lf *LogFetcher) getSingleContainerName() (string, error) {
 		return "", fmt.Errorf("no containers found in pod %s", lf.PodName)
 	} else if containerCount == 1 {
 		return pod.Spec.Containers[0].Name, nil
-	} else {
-		containerNames := make([]string, containerCount)
-		for i, c := range pod.Spec.Containers {
-			containerNames[i] = c.Name
+	}
+
+	// Create container info list for the prompt
+	containers := make([]containerInfo, containerCount)
+	options := make([]string, containerCount)
+
+	for i, c := range pod.Spec.Containers {
+		ready, status := getContainerStatus(pod, c.Name)
+		info := containerInfo{
+			Name:   c.Name,
+			Ready:  ready,
+			Status: status,
+			Image:  c.Image,
 		}
-		return "", fmt.Errorf("pod %s has multiple containers. Please specify one using the --container flag: %v", lf.PodName, containerNames)
+		containers[i] = info
+		options[i] = formatContainerInfo(info)
 	}
-}
 
-// GetKubernetesClient initializes and returns a Kubernetes clientset
-func GetKubernetesClient() (*kubernetes.Clientset, error) {
-	kubeconfig := clientcmd.NewDefaultClientConfigLoadingRules().GetDefaultFilename()
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// Prepare the survey prompt
+	var selectedIdx int
+	prompt := &survey.Select{
+		Message: "Choose a container:",
+		Options: options,
+		Filter: func(filter string, value string, index int) bool {
+			container := containers[index]
+			filter = strings.ToLower(filter)
+			return strings.Contains(strings.ToLower(container.Name), filter) ||
+				strings.Contains(strings.ToLower(container.Status), filter) ||
+				strings.Contains(strings.ToLower(container.Image), filter)
+		},
+	}
+
+	// Show the prompt and get user's selection
+	err = survey.AskOne(prompt, &selectedIdx, survey.WithPageSize(10))
 	if err != nil {
-		return nil, err
+		if err == terminal.InterruptErr {
+			return "", fmt.Errorf("operation cancelled")
+		}
+		return "", fmt.Errorf("selection failed: %v", err)
 	}
-	return kubernetes.NewForConfig(config)
+
+	return containers[selectedIdx].Name, nil
 }
 
-// Add this function to the existing file
+func GetKubernetesClient() (*kubernetes.Clientset, string, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	configOverrides := &clientcmd.ConfigOverrides{}
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
+
+	config, err := kubeConfig.ClientConfig()
+	if err != nil {
+		return nil, "", err
+	}
+
+	namespace, _, err := kubeConfig.Namespace()
+	if err != nil {
+		return nil, "", err
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return clientset, namespace, nil
+}
 
 func ListContainers(clientset *kubernetes.Clientset, namespace, podName string) ([]string, error) {
 	pod, err := clientset.CoreV1().Pods(namespace).Get(context.Background(), podName, metav1.GetOptions{})
@@ -114,11 +206,4 @@ func ListContainers(clientset *kubernetes.Clientset, namespace, podName string) 
 	}
 
 	return containers, nil
-}
-
-func (lf *LogFetcher) GetLogReader() (io.ReadCloser, error) {
-	return lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, &corev1.PodLogOptions{
-		Container: lf.Container,
-		Follow:    lf.Follow,
-	}).Stream(context.Background())
 }
