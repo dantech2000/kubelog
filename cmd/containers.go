@@ -9,6 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// containerOptions holds the command options for the containers command
+type containerOptions struct {
+	namespace    string
+	podName      string
+	outputFormat string
+}
+
 var containersCmd = &cobra.Command{
 	Use:   "containers [pod-name]",
 	Short: "List containers in a Kubernetes pod",
@@ -22,36 +29,63 @@ Example usage:
   kubelog containers my-pod -n my-namespace -o yaml
   kubelog containers my-pod -n my-namespace -o posix`,
 	Args: cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		podName := args[0]
-		namespace, _ := cmd.Flags().GetString("namespace")
-		outputFormat, _ := cmd.Flags().GetString("output")
-
-		clientset, err := lib.GetKubernetesClient()
-		if err != nil {
-			color.Red("Error creating Kubernetes client: %v", err)
-			os.Exit(1)
-		}
-
-		containers, err := lib.ListContainers(clientset, namespace, podName)
-		if err != nil {
-			color.Red("Error listing containers: %v", err)
-			os.Exit(1)
-		}
-
-		formatter := lib.NewOutputFormatter(podName, namespace, containers)
-		output, err := formatter.FormatOutput(outputFormat)
-		if err != nil {
-			color.Red("Error formatting output: %v", err)
-			os.Exit(1)
-		}
-
-		fmt.Println(output)
-	},
+	Run:  runContainers,
 }
 
 func init() {
 	rootCmd.AddCommand(containersCmd)
-	containersCmd.Flags().StringP("namespace", "n", "default", "Kubernetes namespace of the pod")
+	containersCmd.Flags().StringP("namespace", "n", "", "Kubernetes namespace (defaults to current context's namespace)")
 	containersCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or posix")
+}
+
+func getContainerOptions(cmd *cobra.Command, args []string, contextNamespace string) (*containerOptions, error) {
+	namespace, err := cmd.Flags().GetString("namespace")
+	if err != nil {
+		return nil, fmt.Errorf("error getting namespace flag: %v", err)
+	}
+
+	// Use explicitly provided namespace if set, otherwise use context namespace
+	if namespace == "" {
+		namespace = contextNamespace
+	}
+
+	outputFormat, err := cmd.Flags().GetString("output")
+	if err != nil {
+		return nil, fmt.Errorf("error getting output format flag: %v", err)
+	}
+
+	return &containerOptions{
+		namespace:    namespace,
+		podName:      args[0],
+		outputFormat: outputFormat,
+	}, nil
+}
+
+func runContainers(cmd *cobra.Command, args []string) {
+	clientset, contextNamespace, err := lib.GetKubernetesClient()
+	if err != nil {
+		color.Red("Error creating Kubernetes client: %v", err)
+		os.Exit(1)
+	}
+
+	opts, err := getContainerOptions(cmd, args, contextNamespace)
+	if err != nil {
+		color.Red("Error getting command options: %v", err)
+		os.Exit(1)
+	}
+
+	containers, err := lib.ListContainers(clientset, opts.namespace, opts.podName)
+	if err != nil {
+		color.Red("Error listing containers: %v", err)
+		os.Exit(1)
+	}
+
+	formatter := lib.NewOutputFormatter(opts.podName, opts.namespace, containers)
+	output, err := formatter.FormatOutput(opts.outputFormat)
+	if err != nil {
+		color.Red("Error formatting output: %v", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(output)
 }

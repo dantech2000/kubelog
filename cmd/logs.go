@@ -15,6 +15,7 @@ type logOptions struct {
 	follow    bool
 	level     string
 	podName   string
+	previous  bool
 }
 
 var logsCmd = &cobra.Command{
@@ -23,15 +24,21 @@ var logsCmd = &cobra.Command{
 	Long: `Display logs for a specific container. You can filter logs by level using the --level flag.
 Supported levels are DEBUG, INFO, WARN, and ERROR.`,
 	Args: cobra.ExactArgs(1),
-	Run:  runLogs,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := runLogs(cmd, args); err != nil {
+			fmt.Printf("Error running logs command: %v\n", err)
+			os.Exit(1)
+		}
+	},
 }
 
 func init() {
 	rootCmd.AddCommand(logsCmd)
-	logsCmd.Flags().StringP("namespace", "n", "default", "Kubernetes namespace of the pod")
+	logsCmd.Flags().StringP("namespace", "n", "", "Kubernetes namespace (defaults to current context's namespace)")
 	logsCmd.Flags().StringP("container", "c", "", "Specific container name within the pod (optional if pod has only one container)")
 	logsCmd.Flags().BoolP("follow", "f", false, "Follow the log output in real-time (similar to 'tail -f')")
 	logsCmd.Flags().StringP("level", "l", "DEBUG", "Filter logs by level (DEBUG, INFO, WARN, ERROR)")
+	logsCmd.Flags().BoolP("previous", "p", false, "Get previous terminated container logs")
 }
 
 func getLogOptions(cmd *cobra.Command, args []string) (*logOptions, error) {
@@ -55,45 +62,52 @@ func getLogOptions(cmd *cobra.Command, args []string) (*logOptions, error) {
 		return nil, fmt.Errorf("error getting level flag: %v", err)
 	}
 
+	previous, err := cmd.Flags().GetBool("previous")
+	if err != nil {
+		return nil, fmt.Errorf("error getting previous flag: %v", err)
+	}
+
 	return &logOptions{
 		namespace: namespace,
 		container: container,
 		follow:    follow,
 		level:     level,
 		podName:   args[0],
+		previous:  previous,
 	}, nil
 }
 
-func runLogs(cmd *cobra.Command, args []string) {
-	opts, err := getLogOptions(cmd, args)
+func runLogs(cmd *cobra.Command, args []string) error {
+	options, err := getLogOptions(cmd, args)
 	if err != nil {
-		fmt.Printf("Error getting command options: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
-	clientset, err := lib.GetKubernetesClient()
+	clientset, contextNamespace, err := lib.GetKubernetesClient()
 	if err != nil {
-		fmt.Printf("Error creating Kubernetes client: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error getting kubernetes client: %v", err)
 	}
 
-	logFetcher := lib.NewLogFetcher(clientset, opts.namespace, opts.podName, opts.container, opts.follow)
+	// Use context namespace if no namespace is specified
+	if options.namespace == "" {
+		options.namespace = contextNamespace
+	}
 
-	filterLevel, err := lib.ParseLogLevel(opts.level)
+	// Create log fetcher with the new interface
+	logFetcher := lib.NewLogFetcher(
+		clientset,
+		options.namespace,
+		options.podName,
+		options.follow,
+		options.previous,
+		os.Stdout,
+	)
+
+	// Get logs using the new method
+	err = logFetcher.GetLogs()
 	if err != nil {
-		fmt.Printf("Invalid log level: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error fetching logs: %v", err)
 	}
 
-	logReader, err := logFetcher.GetLogReader()
-	if err != nil {
-		fmt.Printf("Error fetching logs: %v\n", err)
-		os.Exit(1)
-	}
-	defer logReader.Close()
-
-	if err := lib.FilterAndFormatLogs(logReader, os.Stdout, filterLevel); err != nil {
-		fmt.Printf("Error processing logs: %v\n", err)
-		os.Exit(1)
-	}
+	return nil
 }
