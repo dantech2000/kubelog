@@ -2,6 +2,33 @@
 
 Kubelog is a CLI tool to fetch and enhance Kubernetes pod logs. It simplifies the retrieval and parsing of Kubernetes pod logs, providing enhanced formatting and filtering options for efficient troubleshooting.
 
+## Features
+
+- 🎯 **Smart Log Parsing**
+  - Automatic detection of JSON and plain text log formats
+  - Intelligent timestamp parsing across multiple formats
+  - Log level detection (DEBUG, INFO, WARN, ERROR, FATAL)
+  - Structured field parsing for JSON logs
+
+- 🎨 **Beautiful Output Formatting**
+  - Color-coded log levels and timestamps
+  - Consistent timestamp formatting
+  - Highlighted error and warning messages
+  - Clean key-value formatting for JSON fields
+  - Logger type identification (e.g., logrus, zap)
+
+- 🚀 **Kubernetes Integration**
+  - Easy container selection with interactive prompts
+  - Support for multi-container pods
+  - Previous container logs with `-p` flag
+  - Real-time log following with `-f` flag
+  - Container status indicators
+
+- ⚡ **Performance**
+  - Efficient log streaming
+  - Smart container name completion
+  - Optimized log parsing
+
 ## Installation
 
 ### Using Homebrew
@@ -15,10 +42,10 @@ brew install kubelog
 
 ### Prerequisites
 
--   Go 1.16 or later
--   Access to a Kubernetes cluster
--   kubectl configured with the appropriate context
--   [just](https://github.com/casey/just) command runner (optional, but recommended)
+- Go 1.16 or later
+- Access to a Kubernetes cluster
+- kubectl configured with the appropriate context
+- [just](https://github.com/casey/just) command runner (optional, but recommended)
 
 ### Steps
 
@@ -61,10 +88,10 @@ kubelog logs [pod-name] -n [namespace]
 
 Options:
 
--   `-n, --namespace`: Specify the Kubernetes namespace (default is "default")
--   `-c, --container`: Specify the container name (if pod has multiple containers)
--   `-f, --follow`: Follow the log output (similar to `tail -f`)
--   `-l, --level`: Filter logs by level (DEBUG, INFO, WARN, ERROR)
+- `-n, --namespace`: Specify the Kubernetes namespace (default is "default")
+- `-c, --container`: Specify the container name (if pod has multiple containers)
+- `-f, --follow`: Follow the log output (similar to `tail -f`)
+- `-l, --level`: Filter logs by level (DEBUG, INFO, WARN, ERROR)
 
 Example:
 
@@ -82,7 +109,7 @@ kubelog containers [pod-name] -n [namespace]
 
 Options:
 
--   `-n, --namespace`: Specify the Kubernetes namespace (default is "default")
+- `-n, --namespace`: Specify the Kubernetes namespace (default is "default")
 
 Example:
 
@@ -100,8 +127,8 @@ kubelog version
 
 Options:
 
--   `-s, --short`: Display only the version number
--   `-o, --output`: Output format (json or yaml)
+- `-s, --short`: Display only the version number
+- `-o, --output`: Output format (json or yaml)
 
 Examples:
 

@@ -2,6 +2,7 @@
 package kubernetes
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/dantech2000/kubelog/pkg/logging"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -17,7 +19,7 @@ import (
 // LogFetcher handles retrieving logs from Kubernetes containers
 type LogFetcher struct {
 	// Clientset is the Kubernetes client
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 	// Namespace is the Kubernetes namespace
 	Namespace string
 	// PodName is the name of the pod
@@ -33,7 +35,7 @@ type LogFetcher struct {
 }
 
 // NewLogFetcher creates a new LogFetcher instance
-func NewLogFetcher(clientset *kubernetes.Clientset, namespace, podName string, follow bool, previous bool, writer io.Writer) *LogFetcher {
+func NewLogFetcher(clientset kubernetes.Interface, namespace, podName string, follow bool, previous bool, writer io.Writer) *LogFetcher {
 	return &LogFetcher{
 		Clientset: clientset,
 		Namespace: namespace,
@@ -116,7 +118,31 @@ func (lf *LogFetcher) hasPreviousContainer(containerName string) (bool, error) {
 			return status.RestartCount > 0, nil
 		}
 	}
-	return false, nil
+	return false, fmt.Errorf("container '%s' not found in pod '%s'", containerName, lf.PodName)
+}
+
+// LogWriter wraps an io.Writer to process logs before writing
+type LogWriter struct {
+	writer io.Writer
+}
+
+// Write implements io.Writer interface
+func (w *LogWriter) Write(p []byte) (n int, err error) {
+	// Convert bytes to string and parse log
+	logLine := strings.TrimSpace(string(p))
+	if logLine == "" {
+		return len(p), nil
+	}
+
+	parsedLog := logging.ParseLog(logLine)
+	// Write the parsed log with a newline
+	_, err = fmt.Fprintln(w.writer, parsedLog)
+	return len(p), err
+}
+
+// NewLogWriter creates a new LogWriter
+func NewLogWriter(w io.Writer) *LogWriter {
+	return &LogWriter{writer: w}
 }
 
 // GetLogs retrieves logs from the specified container.
@@ -130,6 +156,24 @@ func (lf *LogFetcher) GetLogs() error {
 			return fmt.Errorf("failed to get container name: %w", err)
 		}
 		lf.ContainerName = containerName
+	}
+
+	// Validate container exists
+	ctx := context.Background()
+	pod, err := lf.Clientset.CoreV1().Pods(lf.Namespace).Get(ctx, lf.PodName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("error fetching pod details: %w", err)
+	}
+
+	containerExists := false
+	for _, container := range pod.Spec.Containers {
+		if container.Name == lf.ContainerName {
+			containerExists = true
+			break
+		}
+	}
+	if !containerExists {
+		return fmt.Errorf("container '%s' not found in pod '%s'", lf.ContainerName, lf.PodName)
 	}
 
 	// Check for previous container if -p flag is used
@@ -151,7 +195,7 @@ func (lf *LogFetcher) GetLogs() error {
 		Previous:  lf.Previous,
 	}
 
-	ctx := context.Background()
+	ctx = context.Background()
 	req := lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
@@ -159,9 +203,21 @@ func (lf *LogFetcher) GetLogs() error {
 	}
 	defer podLogs.Close()
 
-	_, err = io.Copy(lf.Writer, podLogs)
-	if err != nil {
-		return fmt.Errorf("error copying log stream: %w", err)
+	// Create a scanner to read logs line by line
+	scanner := bufio.NewScanner(podLogs)
+	logWriter := NewLogWriter(lf.Writer)
+
+	// Process each log line
+	for scanner.Scan() {
+		logLine := scanner.Text()
+		if _, err := logWriter.Write([]byte(logLine)); err != nil {
+			return fmt.Errorf("error writing log line: %w", err)
+		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading log stream: %w", err)
+	}
+
 	return nil
 }
