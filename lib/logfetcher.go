@@ -46,6 +46,18 @@ func (lf *LogFetcher) GetLogs() error {
 		lf.ContainerName = containerName
 	}
 
+	// Check for previous container if -p flag is used
+	if lf.Previous {
+		hasPrevious, err := lf.hasPreviousContainer(lf.ContainerName)
+		if err != nil {
+			return err
+		}
+		if !hasPrevious {
+			return fmt.Errorf("no previous terminated container found for '%s' in pod '%s'\nNote: The -p flag only works for containers that have terminated or restarted",
+				lf.ContainerName, lf.PodName)
+		}
+	}
+
 	// Now proceed with log fetching
 	podLogOpts := corev1.PodLogOptions{
 		Container: lf.ContainerName,
@@ -66,6 +78,20 @@ func (lf *LogFetcher) GetLogs() error {
 	}
 	fmt.Printf("Log stream opened successfully\n")
 	return nil
+}
+
+func (lf *LogFetcher) hasPreviousContainer(containerName string) (bool, error) {
+	pod, err := lf.Clientset.CoreV1().Pods(lf.Namespace).Get(context.Background(), lf.PodName, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("error fetching pod details: %v", err)
+	}
+
+	for _, status := range pod.Status.ContainerStatuses {
+		if status.Name == containerName {
+			return status.RestartCount > 0, nil
+		}
+	}
+	return false, nil
 }
 
 type containerInfo struct {
