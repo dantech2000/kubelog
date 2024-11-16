@@ -1,4 +1,4 @@
-package lib
+package format
 
 import (
 	"encoding/json"
@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// OutputFormatter handles different output formats
 type OutputFormatter struct {
 	PodName    string
 	Namespace  string

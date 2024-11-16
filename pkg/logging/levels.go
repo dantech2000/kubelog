@@ -1,4 +1,4 @@
-package lib
+package logging
 
 // LogLevel represents the severity of a log entry
 type LogLevel int
@@ -9,12 +9,6 @@ const (
 	WARN
 	ERROR
 )
-
-// LogEntry represents a single log entry
-type LogEntry struct {
-	Level   LogLevel
-	Message string
-}
 
 // String returns the string representation of a LogLevel
 func (l LogLevel) String() string {

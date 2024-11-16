@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	lib "github.com/dantech2000/kubelog/lib"
+	"github.com/dantech2000/kubelog/pkg/format"
+	"github.com/dantech2000/kubelog/pkg/kubernetes"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -62,7 +63,7 @@ func getContainerOptions(cmd *cobra.Command, args []string, contextNamespace str
 }
 
 func runContainers(cmd *cobra.Command, args []string) {
-	clientset, contextNamespace, err := lib.GetKubernetesClient()
+	clientset, contextNamespace, err := kubernetes.GetKubernetesClient()
 	if err != nil {
 		color.Red("Error creating Kubernetes client: %v", err)
 		os.Exit(1)
@@ -74,13 +75,13 @@ func runContainers(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	containers, err := lib.ListContainers(clientset, opts.namespace, opts.podName)
+	containers, err := kubernetes.ListContainers(clientset, opts.namespace, opts.podName)
 	if err != nil {
 		color.Red("Error listing containers: %v", err)
 		os.Exit(1)
 	}
 
-	formatter := lib.NewOutputFormatter(opts.podName, opts.namespace, containers)
+	formatter := format.NewOutputFormatter(opts.podName, opts.namespace, containers)
 	output, err := formatter.FormatOutput(opts.outputFormat)
 	if err != nil {
 		color.Red("Error formatting output: %v", err)

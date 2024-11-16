@@ -6,7 +6,7 @@ import (
 	"os"
 	"runtime"
 
-	lib "github.com/dantech2000/kubelog/lib"
+	"github.com/dantech2000/kubelog/pkg/version"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
@@ -55,7 +55,7 @@ func init() {
 	versionCmd.Flags().StringP("output", "o", "", "Output format (json or yaml)")
 }
 
-func getVersionData(version lib.Version) versionData {
+func getVersionData(version version.Version) versionData {
 	return versionData{
 		Version:   version.String(),
 		Commit:    version.CommitHash,
@@ -70,7 +70,7 @@ func runVersion(cmd *cobra.Command, args []string) {
 	short, _ := cmd.Flags().GetBool("short")
 	output, _ := cmd.Flags().GetString("output")
 
-	version := lib.CurrentVersion
+	version := version.CurrentVersion
 
 	if short {
 		fmt.Println(version.String())
@@ -90,7 +90,7 @@ func runVersion(cmd *cobra.Command, args []string) {
 	}
 }
 
-func printJSON(version lib.Version) {
+func printJSON(version version.Version) {
 	data := getVersionData(version)
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -100,7 +100,7 @@ func printJSON(version lib.Version) {
 	fmt.Println(string(jsonData))
 }
 
-func printYAML(version lib.Version) {
+func printYAML(version version.Version) {
 	data := getVersionData(version)
 	yamlData, err := yaml.Marshal(data)
 	if err != nil {
