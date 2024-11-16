@@ -2,6 +2,7 @@
 package kubernetes
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
+	"github.com/dantech2000/kubelog/pkg/logging"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -119,6 +121,30 @@ func (lf *LogFetcher) hasPreviousContainer(containerName string) (bool, error) {
 	return false, nil
 }
 
+// LogWriter wraps an io.Writer to process logs before writing
+type LogWriter struct {
+	writer io.Writer
+}
+
+// Write implements io.Writer interface
+func (w *LogWriter) Write(p []byte) (n int, err error) {
+	// Convert bytes to string and parse log
+	logLine := strings.TrimSpace(string(p))
+	if logLine == "" {
+		return len(p), nil
+	}
+
+	parsedLog := logging.ParseLog(logLine)
+	// Write the parsed log with a newline
+	_, err = fmt.Fprintln(w.writer, parsedLog)
+	return len(p), err
+}
+
+// NewLogWriter creates a new LogWriter
+func NewLogWriter(w io.Writer) *LogWriter {
+	return &LogWriter{writer: w}
+}
+
 // GetLogs retrieves logs from the specified container.
 // If no container is specified, it will prompt the user to select one.
 // It handles both current and previous container instances based on the Previous flag.
@@ -159,9 +185,21 @@ func (lf *LogFetcher) GetLogs() error {
 	}
 	defer podLogs.Close()
 
-	_, err = io.Copy(lf.Writer, podLogs)
-	if err != nil {
-		return fmt.Errorf("error copying log stream: %w", err)
+	// Create a scanner to read logs line by line
+	scanner := bufio.NewScanner(podLogs)
+	logWriter := NewLogWriter(lf.Writer)
+
+	// Process each log line
+	for scanner.Scan() {
+		logLine := scanner.Text()
+		if _, err := logWriter.Write([]byte(logLine)); err != nil {
+			return fmt.Errorf("error writing log line: %w", err)
+		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading log stream: %w", err)
+	}
+
 	return nil
 }
