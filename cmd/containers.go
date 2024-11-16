@@ -37,6 +37,9 @@ func init() {
 	rootCmd.AddCommand(containersCmd)
 	containersCmd.Flags().StringP("namespace", "n", "", "Kubernetes namespace (defaults to current context's namespace)")
 	containersCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or posix")
+
+	// Add completion for pod names
+	containersCmd.ValidArgsFunction = completePodNames
 }
 
 func getContainerOptions(cmd *cobra.Command, args []string, contextNamespace string) (*containerOptions, error) {
