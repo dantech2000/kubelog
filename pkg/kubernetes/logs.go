@@ -19,7 +19,7 @@ import (
 // LogFetcher handles retrieving logs from Kubernetes containers
 type LogFetcher struct {
 	// Clientset is the Kubernetes client
-	Clientset *kubernetes.Clientset
+	Clientset kubernetes.Interface
 	// Namespace is the Kubernetes namespace
 	Namespace string
 	// PodName is the name of the pod
@@ -35,7 +35,7 @@ type LogFetcher struct {
 }
 
 // NewLogFetcher creates a new LogFetcher instance
-func NewLogFetcher(clientset *kubernetes.Clientset, namespace, podName string, follow bool, previous bool, writer io.Writer) *LogFetcher {
+func NewLogFetcher(clientset kubernetes.Interface, namespace, podName string, follow bool, previous bool, writer io.Writer) *LogFetcher {
 	return &LogFetcher{
 		Clientset: clientset,
 		Namespace: namespace,
@@ -118,7 +118,7 @@ func (lf *LogFetcher) hasPreviousContainer(containerName string) (bool, error) {
 			return status.RestartCount > 0, nil
 		}
 	}
-	return false, nil
+	return false, fmt.Errorf("container '%s' not found in pod '%s'", containerName, lf.PodName)
 }
 
 // LogWriter wraps an io.Writer to process logs before writing
@@ -158,6 +158,24 @@ func (lf *LogFetcher) GetLogs() error {
 		lf.ContainerName = containerName
 	}
 
+	// Validate container exists
+	ctx := context.Background()
+	pod, err := lf.Clientset.CoreV1().Pods(lf.Namespace).Get(ctx, lf.PodName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("error fetching pod details: %w", err)
+	}
+
+	containerExists := false
+	for _, container := range pod.Spec.Containers {
+		if container.Name == lf.ContainerName {
+			containerExists = true
+			break
+		}
+	}
+	if !containerExists {
+		return fmt.Errorf("container '%s' not found in pod '%s'", lf.ContainerName, lf.PodName)
+	}
+
 	// Check for previous container if -p flag is used
 	if lf.Previous {
 		hasPrevious, err := lf.hasPreviousContainer(lf.ContainerName)
@@ -177,7 +195,7 @@ func (lf *LogFetcher) GetLogs() error {
 		Previous:  lf.Previous,
 	}
 
-	ctx := context.Background()
+	ctx = context.Background()
 	req := lf.Clientset.CoreV1().Pods(lf.Namespace).GetLogs(lf.PodName, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
 	if err != nil {

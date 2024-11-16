@@ -255,15 +255,13 @@ func ParseLogLevel(level string) (LogLevel, error) {
 	if numLevel, err := strconv.Atoi(level); err == nil {
 		switch {
 		case numLevel <= 10:
-			return DEBUG, nil // TRACE/DEBUG
-		case numLevel <= 20:
 			return DEBUG, nil // DEBUG
-		case numLevel <= 30:
+		case numLevel <= 20:
 			return INFO, nil // INFO
-		case numLevel <= 40:
+		case numLevel <= 30:
 			return WARN, nil // WARN
-		case numLevel >= 50:
-			return ERROR, nil // ERROR/FATAL
+		case numLevel > 30:
+			return ERROR, nil // ERROR
 		}
 	}
 
