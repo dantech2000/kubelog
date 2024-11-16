@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	lib "github.com/dantech2000/kubelog/lib"
+	"github.com/dantech2000/kubelog/pkg/kubernetes"
 	"github.com/spf13/cobra"
 )
 
@@ -83,7 +83,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	clientset, contextNamespace, err := lib.GetKubernetesClient()
+	clientset, contextNamespace, err := kubernetes.GetKubernetesClient()
 	if err != nil {
 		return fmt.Errorf("error getting kubernetes client: %v", err)
 	}
@@ -94,7 +94,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create log fetcher with the new interface
-	logFetcher := lib.NewLogFetcher(
+	logFetcher := kubernetes.NewLogFetcher(
 		clientset,
 		options.namespace,
 		options.podName,

@@ -1,22 +1,22 @@
-package lib
+package format
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/dantech2000/kubelog/pkg/kubernetes"
 	"gopkg.in/yaml.v2"
 )
 
-// OutputFormatter handles different output formats
 type OutputFormatter struct {
 	PodName    string
 	Namespace  string
-	Containers []string
+	Containers []kubernetes.ContainerInfo
 }
 
 // NewOutputFormatter creates a new OutputFormatter
-func NewOutputFormatter(podName, namespace string, containers []string) *OutputFormatter {
+func NewOutputFormatter(podName, namespace string, containers []kubernetes.ContainerInfo) *OutputFormatter {
 	return &OutputFormatter{
 		PodName:    podName,
 		Namespace:  namespace,
@@ -39,31 +39,25 @@ func (of *OutputFormatter) FormatOutput(format string) (string, error) {
 }
 
 func (of *OutputFormatter) formatJSON() (string, error) {
-	data := map[string]interface{}{
-		"podName":    of.PodName,
-		"namespace":  of.Namespace,
-		"containers": of.Containers,
-	}
-	jsonData, err := json.MarshalIndent(data, "", "  ")
+	jsonData, err := json.MarshalIndent(of, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("error marshalling to JSON: %v", err)
+		return "", fmt.Errorf("error marshalling to JSON: %w", err)
 	}
 	return string(jsonData), nil
 }
 
 func (of *OutputFormatter) formatYAML() (string, error) {
-	data := map[string]interface{}{
-		"podName":    of.PodName,
-		"namespace":  of.Namespace,
-		"containers": of.Containers,
-	}
-	yamlData, err := yaml.Marshal(data)
+	yamlData, err := yaml.Marshal(of)
 	if err != nil {
-		return "", fmt.Errorf("error marshalling to YAML: %v", err)
+		return "", fmt.Errorf("error marshalling to YAML: %w", err)
 	}
 	return string(yamlData), nil
 }
 
 func (of *OutputFormatter) formatPOSIX() (string, error) {
-	return strings.Join(of.Containers, "\n"), nil
+	var names []string
+	for _, container := range of.Containers {
+		names = append(names, container.Name)
+	}
+	return strings.Join(names, "\n"), nil
 }
