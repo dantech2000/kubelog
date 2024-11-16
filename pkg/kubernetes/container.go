@@ -67,17 +67,23 @@ func FormatContainerInfo(info ContainerInfo) string {
 		info.Image)
 }
 
-// ListContainers returns a list of container names in a pod
-func ListContainers(clientset *kubernetes.Clientset, namespace, podName string) ([]string, error) {
+// ListContainers returns detailed information about containers in a pod
+func ListContainers(clientset *kubernetes.Clientset, namespace, podName string) ([]ContainerInfo, error) {
 	ctx := context.Background()
 	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("error fetching pod details: %w", err)
 	}
 
-	containers := make([]string, len(pod.Spec.Containers))
+	containers := make([]ContainerInfo, len(pod.Spec.Containers))
 	for i, container := range pod.Spec.Containers {
-		containers[i] = container.Name
+		ready, status := GetContainerStatus(pod, container.Name)
+		containers[i] = ContainerInfo{
+			Name:   container.Name,
+			Ready:  ready,
+			Status: status,
+			Image:  container.Image,
+		}
 	}
 
 	return containers, nil
